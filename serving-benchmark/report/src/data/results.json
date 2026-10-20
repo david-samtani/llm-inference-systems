@@ -1,0 +1,2278 @@
+{
+  "meta": {
+    "name": "David Samtani",
+    "github": "david-samtani",
+    "date": "2026-10-18",
+    "title": "From a Minimal Inference Server to Production Engines: vLLM and Mooncake",
+    "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "device": "NVIDIA A10 (24 GB) · Lambda Cloud · driver 580.126.20 / CUDA 13.0",
+    "repo_url": "https://github.com/david-samtani/llm-inference-systems"
+  },
+  "source": {
+    "harness": "code/run_sweep.py drives code/minimal_full_server.py in-process (minimal_b1) and vLLM's streaming /v1/completions endpoint (vllm_paged, mooncake, mooncake_warm). Servers are launched by code/lambda/run_all.sh, run_mooncake.sh, run_wildchat.sh. Synthetic prompts come from PromptBuilder in run_sweep.py (fixed FILLER text, repeated then truncated until the chat-templated prompt hits the exact target length). WildChat prompts come from wildchat_prompts() in the same file. vLLM 0.32.0, torch 2.13.0, transformers 5.19.0, mooncake-transfer-engine 0.3.13.post1.",
+    "json_file": "report/src/data/results.json",
+    "started": "2026-10-18T20:10:00-04:00",
+    "finished": "2026-10-18T22:57:00-04:00",
+    "workload": {
+      "prompt_token_targets": [
+        128,
+        512,
+        1984
+      ],
+      "max_new_tokens": 64,
+      "concurrency_grid": [
+        1,
+        4
+      ],
+      "reps_per_cell": 3,
+      "warmup_runs": 1,
+      "notes": "The synthetic grid (used in both plots) is a fixed English filler passage trimmed so the TinyLlama chat-templated prompt is exactly 128 / 512 / 1984 tokens (1984 + 64 new = the 2048-token context limit), prefixed with a unique tag per request so no two requests share a full prompt. The same generator feeds every system. The WildChat sanity check (rows with prompt_source = \"wildchat\", excluded from the plots) uses the first 20 English, non-toxic first user turns of allenai/WildChat-1M (data/train-00000-of-00014.parquet, file order) with 16-1984 templated tokens, 1 warm-up + 3 reps at N = 1 and 4. prompt_tokens on those rows is the median across the burst. All systems use temperature 0, ignore_eos, exactly 64 new tokens, one untimed warm-up burst per cell, and N clients released together by a barrier. TTFT = request start to first streamed token (includes queueing, since the baseline serves a burst sequentially and its TTFT includes waiting for earlier requests). TBT = gaps between streamed tokens, p50 and mean per client. KV bytes = dense formula kv_bytes(22 layers, 4 KV heads, seq_len, head_dim 64, 2 bytes) at seq_len = prompt + new - 1, not the engine's allocated pool. mooncake_warm sends each burst once untimed and then times an identical resend. vLLM's own prefix cache is disabled for both Mooncake runs, so warm hits come only from the Mooncake store (the vLLM log shows an external prefix-cache hit rate of up to 46%). One caveat is that prompts of the same length share their first ~16 tokens (chat template + tag stem), so one 16-token KV block can be reused even in cold runs. This affects vllm_paged and mooncake equally and is under 1% of a 1984-token prompt."
+    }
+  },
+  "systems": [
+    {
+      "id": "minimal_b1",
+      "label": "minimal_full_server (batch = 1)",
+      "family": "baseline",
+      "description": "code/minimal_full_server.py imported in-process, running HF transformers in fp16 (no quantization) with a DynamicCache on the GPU, one request at a time. A burst of N is served sequentially, so client k waits for k-1 full generations.",
+      "novelty": "Contiguous per-request KV cache with no batching or scheduler. This is the reference every other system improves on."
+    },
+    {
+      "id": "vllm_paged",
+      "label": "vLLM (PagedAttention + continuous batching)",
+      "family": "vllm",
+      "description": "vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 with default settings (bf16 weights and KV, no quantization, prefix caching and chunked prefill on, CUDA graphs) and a streaming /v1/completions client.",
+      "novelty": "PagedAttention keeps KV in fixed-size blocks, and continuous (iteration-level, Orca-style) batching admits new requests every step, so N = 4 requests prefill and decode together instead of queueing.",
+      "repo": "https://github.com/vllm-project/vllm"
+    },
+    {
+      "id": "mooncake",
+      "label": "vLLM + Mooncake store (cold)",
+      "family": "mooncake",
+      "description": "Same vLLM server (bf16) with --kv-transfer-config MooncakeStoreConnector (kv_role kv_both), a local mooncake_master and a 16 GB embedded store over TCP. vLLM's prefix cache is disabled. Every request is new, so lookups miss and every KV is written to the store.",
+      "novelty": "A hash-addressed KV pool outside the GPU. KV blocks are saved to a shared store keyed by prefix hash. Cold runs pay the save cost with nothing to reuse.",
+      "repo": "https://github.com/kvcache-ai/Mooncake"
+    },
+    {
+      "id": "mooncake_warm",
+      "label": "vLLM + Mooncake store (warm prefix)",
+      "family": "mooncake",
+      "description": "Same server as mooncake. Each burst is sent once untimed, then the identical prompts are timed, so their KV is already in the store.",
+      "novelty": "Prefix reuse means KV for an already-seen prefix is fetched from the Mooncake store instead of recomputed, which should cut prefill time more as prompts get longer.",
+      "repo": "https://github.com/kvcache-ai/Mooncake"
+    }
+  ],
+  "runs": [
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 17.972,
+      "tbt_ms_p50": 15.85,
+      "tbt_ms_mean": 15.874,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 17.929,
+      "tbt_ms_p50": 15.807,
+      "tbt_ms_mean": 15.907,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 17.824,
+      "tbt_ms_p50": 15.823,
+      "tbt_ms_mean": 15.945,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 1528.849,
+      "tbt_ms_p50": 15.588,
+      "tbt_ms_mean": 15.64,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        17.652,
+        1028.238,
+        2029.46,
+        3032.263
+      ],
+      "tbt_ms_samples": [
+        15.585,
+        15.567,
+        15.591,
+        15.596
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 1529.056,
+      "tbt_ms_p50": 15.602,
+      "tbt_ms_mean": 15.664,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        17.649,
+        1026.7,
+        2031.411,
+        3033.063
+      ],
+      "tbt_ms_samples": [
+        15.613,
+        15.595,
+        15.583,
+        15.61
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 1518.773,
+      "tbt_ms_p50": 15.587,
+      "tbt_ms_mean": 15.633,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        17.563,
+        1018.372,
+        2019.175,
+        3029.207
+      ],
+      "tbt_ms_samples": [
+        15.566,
+        15.581,
+        15.593,
+        15.61
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 23.391,
+      "tbt_ms_p50": 15.96,
+      "tbt_ms_mean": 16.001,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 23.377,
+      "tbt_ms_p50": 15.943,
+      "tbt_ms_mean": 15.955,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 23.385,
+      "tbt_ms_p50": 15.958,
+      "tbt_ms_mean": 16.024,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 1547.052,
+      "tbt_ms_p50": 15.715,
+      "tbt_ms_mean": 15.821,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        23.388,
+        1039.991,
+        2054.112,
+        3081.931
+      ],
+      "tbt_ms_samples": [
+        15.707,
+        15.696,
+        15.723,
+        15.733
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 1562.338,
+      "tbt_ms_p50": 15.773,
+      "tbt_ms_mean": 15.92,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        23.434,
+        1044.267,
+        2080.41,
+        3109.781
+      ],
+      "tbt_ms_samples": [
+        15.723,
+        15.822,
+        15.784,
+        15.762
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 1567.267,
+      "tbt_ms_p50": 15.778,
+      "tbt_ms_mean": 15.897,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        23.465,
+        1056.782,
+        2077.751,
+        3102.432
+      ],
+      "tbt_ms_samples": [
+        15.782,
+        15.739,
+        15.774,
+        15.781
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 91.759,
+      "tbt_ms_p50": 15.993,
+      "tbt_ms_mean": 16.093,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 91.505,
+      "tbt_ms_p50": 15.96,
+      "tbt_ms_mean": 15.986,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 92.937,
+      "tbt_ms_p50": 15.971,
+      "tbt_ms_mean": 16.118,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 1744.557,
+      "tbt_ms_p50": 15.862,
+      "tbt_ms_mean": 16.009,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        91.932,
+        1192.302,
+        2296.812,
+        3397.144
+      ],
+      "tbt_ms_samples": [
+        15.902,
+        15.854,
+        15.87,
+        15.844
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 1728.962,
+      "tbt_ms_p50": 15.831,
+      "tbt_ms_mean": 15.845,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        91.045,
+        1184.033,
+        2273.891,
+        3364.252
+      ],
+      "tbt_ms_samples": [
+        15.86,
+        15.823,
+        15.808,
+        15.838
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 1732.01,
+      "tbt_ms_p50": 15.832,
+      "tbt_ms_mean": 15.855,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        91.084,
+        1184.946,
+        2279.074,
+        3368.273
+      ],
+      "tbt_ms_samples": [
+        15.832,
+        15.831,
+        15.817,
+        15.836
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 12.468,
+      "tbt_ms_p50": 5.481,
+      "tbt_ms_mean": 5.491,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 12.437,
+      "tbt_ms_p50": 5.533,
+      "tbt_ms_mean": 5.556,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 11.999,
+      "tbt_ms_p50": 5.506,
+      "tbt_ms_mean": 5.505,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 25.75,
+      "tbt_ms_p50": 5.657,
+      "tbt_ms_mean": 5.674,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        15.905,
+        26.259,
+        25.24,
+        26.92
+      ],
+      "tbt_ms_samples": [
+        5.669,
+        5.657,
+        5.657,
+        5.657
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 25.996,
+      "tbt_ms_p50": 5.646,
+      "tbt_ms_mean": 5.645,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        27.389,
+        25.764,
+        26.227,
+        17.39
+      ],
+      "tbt_ms_samples": [
+        5.646,
+        5.649,
+        5.627,
+        5.646
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 26.064,
+      "tbt_ms_p50": 5.684,
+      "tbt_ms_mean": 5.665,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        26.409,
+        26.993,
+        25.718,
+        16.669
+      ],
+      "tbt_ms_samples": [
+        5.674,
+        5.683,
+        5.685,
+        5.688
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 22.401,
+      "tbt_ms_p50": 5.547,
+      "tbt_ms_mean": 5.535,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 21.357,
+      "tbt_ms_p50": 5.561,
+      "tbt_ms_mean": 5.578,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 21.365,
+      "tbt_ms_p50": 5.544,
+      "tbt_ms_mean": 5.542,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 54.293,
+      "tbt_ms_p50": 5.852,
+      "tbt_ms_mean": 5.984,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        71.339,
+        37.414,
+        70.692,
+        37.894
+      ],
+      "tbt_ms_samples": [
+        5.85,
+        5.856,
+        5.849,
+        5.854
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 73.302,
+      "tbt_ms_p50": 5.792,
+      "tbt_ms_mean": 5.912,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        23.828,
+        73.975,
+        72.629,
+        74.489
+      ],
+      "tbt_ms_samples": [
+        5.787,
+        5.793,
+        5.792,
+        5.791
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 72.281,
+      "tbt_ms_p50": 5.755,
+      "tbt_ms_mean": 5.905,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        72.51,
+        23.816,
+        72.051,
+        73.781
+      ],
+      "tbt_ms_samples": [
+        5.755,
+        5.755,
+        5.754,
+        5.756
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 73.18,
+      "tbt_ms_p50": 5.653,
+      "tbt_ms_mean": 5.597,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 72.56,
+      "tbt_ms_p50": 5.618,
+      "tbt_ms_mean": 5.621,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 72.764,
+      "tbt_ms_p50": 5.633,
+      "tbt_ms_mean": 5.626,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 191.529,
+      "tbt_ms_p50": 6.014,
+      "tbt_ms_mean": 7.6,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        76.767,
+        229.689,
+        296.672,
+        153.369
+      ],
+      "tbt_ms_samples": [
+        6.023,
+        6.009,
+        6.01,
+        6.018
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 191.763,
+      "tbt_ms_p50": 6.024,
+      "tbt_ms_mean": 7.594,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        77.589,
+        297.902,
+        229.265,
+        154.261
+      ],
+      "tbt_ms_samples": [
+        6.037,
+        6.022,
+        6.023,
+        6.026
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 189.557,
+      "tbt_ms_p50": 6.036,
+      "tbt_ms_mean": 7.666,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        300.839,
+        227.383,
+        76.718,
+        151.731
+      ],
+      "tbt_ms_samples": [
+        6.02,
+        6.033,
+        6.04,
+        6.039
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 19.116,
+      "tbt_ms_p50": 5.455,
+      "tbt_ms_mean": 5.53,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 17.286,
+      "tbt_ms_p50": 5.536,
+      "tbt_ms_mean": 5.575,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 17.607,
+      "tbt_ms_p50": 5.501,
+      "tbt_ms_mean": 5.546,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 40.991,
+      "tbt_ms_p50": 5.596,
+      "tbt_ms_mean": 5.618,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        35.219,
+        46.592,
+        47.173,
+        35.391
+      ],
+      "tbt_ms_samples": [
+        5.598,
+        5.593,
+        5.594,
+        5.599
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 40.461,
+      "tbt_ms_p50": 5.588,
+      "tbt_ms_mean": 5.671,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        41.845,
+        40.15,
+        40.772,
+        32.69
+      ],
+      "tbt_ms_samples": [
+        5.587,
+        5.589,
+        5.57,
+        5.653
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 34.364,
+      "tbt_ms_p50": 5.63,
+      "tbt_ms_mean": 5.751,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        35.392,
+        34.18,
+        34.548,
+        33.018
+      ],
+      "tbt_ms_samples": [
+        5.63,
+        5.629,
+        5.63,
+        5.63
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 27.365,
+      "tbt_ms_p50": 5.526,
+      "tbt_ms_mean": 5.749,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 25.573,
+      "tbt_ms_p50": 5.514,
+      "tbt_ms_mean": 5.728,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 26.738,
+      "tbt_ms_p50": 5.517,
+      "tbt_ms_mean": 5.746,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 95.434,
+      "tbt_ms_p50": 5.726,
+      "tbt_ms_mean": 6.505,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        96.065,
+        95.75,
+        95.118,
+        31.123
+      ],
+      "tbt_ms_samples": [
+        5.729,
+        5.723,
+        5.719,
+        5.739
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 113.481,
+      "tbt_ms_p50": 5.675,
+      "tbt_ms_mean": 6.195,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        31.074,
+        112.531,
+        126.017,
+        114.431
+      ],
+      "tbt_ms_samples": [
+        5.679,
+        5.675,
+        5.672,
+        5.675
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 113.766,
+      "tbt_ms_p50": 5.667,
+      "tbt_ms_mean": 6.074,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        129.097,
+        113.459,
+        114.073,
+        62.097
+      ],
+      "tbt_ms_samples": [
+        5.655,
+        5.667,
+        5.668,
+        5.667
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 77.438,
+      "tbt_ms_p50": 5.609,
+      "tbt_ms_mean": 6.446,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 76.265,
+      "tbt_ms_p50": 5.641,
+      "tbt_ms_mean": 6.441,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 77.503,
+      "tbt_ms_p50": 5.567,
+      "tbt_ms_mean": 6.432,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 369.51,
+      "tbt_ms_p50": 6.017,
+      "tbt_ms_mean": 8.849,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        298.867,
+        440.153,
+        456.206,
+        84.953
+      ],
+      "tbt_ms_samples": [
+        6.023,
+        6.011,
+        6.011,
+        6.027
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 379.647,
+      "tbt_ms_p50": 5.999,
+      "tbt_ms_mean": 8.61,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        464.122,
+        309.034,
+        450.26,
+        82.521
+      ],
+      "tbt_ms_samples": [
+        5.981,
+        6.003,
+        6.0,
+        5.997
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 376.942,
+      "tbt_ms_p50": 5.985,
+      "tbt_ms_mean": 8.636,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        454.787,
+        84.187,
+        447.142,
+        306.743
+      ],
+      "tbt_ms_samples": [
+        5.973,
+        5.99,
+        5.98,
+        5.991
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prompt_source": "synthetic",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 16.724,
+      "tbt_ms_p50": 5.49,
+      "tbt_ms_mean": 5.496,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 16.833,
+      "tbt_ms_p50": 5.526,
+      "tbt_ms_mean": 5.529,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 128,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 16.173,
+      "tbt_ms_p50": 5.508,
+      "tbt_ms_mean": 5.499,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 31.457,
+      "tbt_ms_p50": 5.615,
+      "tbt_ms_mean": 5.611,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        31.786,
+        32.125,
+        31.127,
+        20.67
+      ],
+      "tbt_ms_samples": [
+        5.617,
+        5.624,
+        5.613,
+        5.609
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 30.981,
+      "tbt_ms_p50": 5.634,
+      "tbt_ms_mean": 5.612,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        31.377,
+        31.814,
+        30.585,
+        20.323
+      ],
+      "tbt_ms_samples": [
+        5.634,
+        5.64,
+        5.632,
+        5.635
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 128,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 31.358,
+      "tbt_ms_p50": 5.61,
+      "tbt_ms_mean": 5.615,
+      "kv_bytes": 4302848,
+      "kv_seq_len": 191,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        32.603,
+        31.688,
+        31.028,
+        20.481
+      ],
+      "tbt_ms_samples": [
+        5.611,
+        5.61,
+        5.598,
+        5.612
+      ],
+      "kv_bytes_samples": [
+        4302848,
+        4302848,
+        4302848,
+        4302848
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 21.583,
+      "tbt_ms_p50": 5.534,
+      "tbt_ms_mean": 5.521,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 23.847,
+      "tbt_ms_p50": 5.53,
+      "tbt_ms_mean": 5.516,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 512,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 23.717,
+      "tbt_ms_p50": 5.521,
+      "tbt_ms_mean": 5.52,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 51.789,
+      "tbt_ms_p50": 5.732,
+      "tbt_ms_mean": 5.686,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        51.154,
+        39.714,
+        57.454,
+        52.424
+      ],
+      "tbt_ms_samples": [
+        5.74,
+        5.725,
+        5.724,
+        5.738
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 53.141,
+      "tbt_ms_p50": 5.732,
+      "tbt_ms_mean": 5.684,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        53.116,
+        57.534,
+        39.855,
+        53.165
+      ],
+      "tbt_ms_samples": [
+        5.735,
+        5.729,
+        5.731,
+        5.733
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 512,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 51.692,
+      "tbt_ms_p50": 5.717,
+      "tbt_ms_mean": 5.686,
+      "kv_bytes": 12953600,
+      "kv_seq_len": 575,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        39.179,
+        51.367,
+        56.507,
+        52.018
+      ],
+      "tbt_ms_samples": [
+        5.717,
+        5.718,
+        5.689,
+        5.717
+      ],
+      "kv_bytes_samples": [
+        12953600,
+        12953600,
+        12953600,
+        12953600
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 42.278,
+      "tbt_ms_p50": 5.586,
+      "tbt_ms_mean": 5.551,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 42.748,
+      "tbt_ms_p50": 5.527,
+      "tbt_ms_mean": 5.528,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 1984,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 42.645,
+      "tbt_ms_p50": 5.6,
+      "tbt_ms_mean": 5.54,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 142.435,
+      "tbt_ms_p50": 5.986,
+      "tbt_ms_mean": 6.223,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        117.681,
+        67.745,
+        167.188,
+        183.896
+      ],
+      "tbt_ms_samples": [
+        6.004,
+        6.021,
+        5.969,
+        5.966
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 143.284,
+      "tbt_ms_p50": 6.004,
+      "tbt_ms_mean": 6.21,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        118.308,
+        180.225,
+        74.695,
+        168.26
+      ],
+      "tbt_ms_samples": [
+        6.009,
+        6.0,
+        6.026,
+        5.997
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 1984,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 139.277,
+      "tbt_ms_p50": 5.987,
+      "tbt_ms_mean": 6.202,
+      "kv_bytes": 46114816,
+      "kv_seq_len": 2047,
+      "new_tokens": 64,
+      "ttft_ms_samples": [
+        164.069,
+        177.553,
+        72.261,
+        114.484
+      ],
+      "tbt_ms_samples": [
+        5.983,
+        5.985,
+        5.997,
+        5.989
+      ],
+      "kv_bytes_samples": [
+        46114816,
+        46114816,
+        46114816,
+        46114816
+      ],
+      "prefix_reuse": "warm",
+      "prompt_source": "synthetic"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 58,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 17.274,
+      "tbt_ms_p50": 15.718,
+      "tbt_ms_mean": 15.817,
+      "kv_bytes": 2725888,
+      "kv_seq_len": 121,
+      "new_tokens": 64,
+      "prompt_source": "wildchat"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 373,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 20.506,
+      "tbt_ms_p50": 15.794,
+      "tbt_ms_mean": 15.788,
+      "kv_bytes": 9822208,
+      "kv_seq_len": 436,
+      "new_tokens": 64,
+      "prompt_source": "wildchat"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 410,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 21.36,
+      "tbt_ms_p50": 15.769,
+      "tbt_ms_mean": 15.776,
+      "kv_bytes": 10655744,
+      "kv_seq_len": 473,
+      "new_tokens": 64,
+      "prompt_source": "wildchat"
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 110,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 1505.04,
+      "tbt_ms_p50": 15.397,
+      "tbt_ms_mean": 15.43,
+      "kv_bytes": 3897344,
+      "kv_seq_len": 173,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        18.77,
+        1010.419,
+        1999.661,
+        3004.786
+      ],
+      "tbt_ms_samples": [
+        15.405,
+        15.405,
+        15.356,
+        15.389
+      ],
+      "kv_bytes_samples": [
+        4550656,
+        6037504,
+        3244032,
+        2140160
+      ]
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 38,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 1497.761,
+      "tbt_ms_p50": 15.33,
+      "tbt_ms_mean": 15.349,
+      "kv_bytes": 2286592,
+      "kv_seq_len": 101,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        16.842,
+        1004.012,
+        1991.51,
+        2974.729
+      ],
+      "tbt_ms_samples": [
+        15.367,
+        15.339,
+        15.321,
+        15.298
+      ],
+      "kv_bytes_samples": [
+        1982464,
+        1802240,
+        2590720,
+        2658304
+      ]
+    },
+    {
+      "system_id": "minimal_b1",
+      "prompt_tokens": 52,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 1500.138,
+      "tbt_ms_p50": 15.307,
+      "tbt_ms_mean": 15.355,
+      "kv_bytes": 2590720,
+      "kv_seq_len": 115,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        16.775,
+        1004.533,
+        1995.743,
+        2976.617
+      ],
+      "tbt_ms_samples": [
+        15.321,
+        15.305,
+        15.271,
+        15.31
+      ],
+      "kv_bytes_samples": [
+        2635776,
+        2545664,
+        3153920,
+        1779712
+      ]
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 58,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 11.116,
+      "tbt_ms_p50": 5.53,
+      "tbt_ms_mean": 5.484,
+      "kv_bytes": 2725888,
+      "kv_seq_len": 121,
+      "new_tokens": 64,
+      "prompt_source": "wildchat"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 373,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 14.502,
+      "tbt_ms_p50": 5.642,
+      "tbt_ms_mean": 5.556,
+      "kv_bytes": 9822208,
+      "kv_seq_len": 436,
+      "new_tokens": 64,
+      "prompt_source": "wildchat"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 410,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 16.737,
+      "tbt_ms_p50": 5.51,
+      "tbt_ms_mean": 5.512,
+      "kv_bytes": 10655744,
+      "kv_seq_len": 473,
+      "new_tokens": 64,
+      "prompt_source": "wildchat"
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 110,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 25.686,
+      "tbt_ms_p50": 5.718,
+      "tbt_ms_mean": 5.658,
+      "kv_bytes": 3897344,
+      "kv_seq_len": 173,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        26.334,
+        15.964,
+        25.037,
+        26.6
+      ],
+      "tbt_ms_samples": [
+        5.702,
+        5.718,
+        5.717,
+        5.719
+      ],
+      "kv_bytes_samples": [
+        4550656,
+        6037504,
+        3244032,
+        2140160
+      ]
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 38,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 20.71,
+      "tbt_ms_p50": 5.599,
+      "tbt_ms_mean": 5.594,
+      "kv_bytes": 2286592,
+      "kv_seq_len": 101,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        20.422,
+        16.63,
+        20.997,
+        22.145
+      ],
+      "tbt_ms_samples": [
+        5.598,
+        5.587,
+        5.612,
+        5.6
+      ],
+      "kv_bytes_samples": [
+        1982464,
+        1802240,
+        2590720,
+        2658304
+      ]
+    },
+    {
+      "system_id": "vllm_paged",
+      "prompt_tokens": 52,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 19.199,
+      "tbt_ms_p50": 5.642,
+      "tbt_ms_mean": 5.616,
+      "kv_bytes": 2590720,
+      "kv_seq_len": 115,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        16.199,
+        16.612,
+        21.786,
+        23.544
+      ],
+      "tbt_ms_samples": [
+        5.649,
+        5.648,
+        5.637,
+        5.632
+      ],
+      "kv_bytes_samples": [
+        2635776,
+        2545664,
+        3153920,
+        1779712
+      ]
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 58,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 12.998,
+      "tbt_ms_p50": 5.499,
+      "tbt_ms_mean": 5.509,
+      "kv_bytes": 2725888,
+      "kv_seq_len": 121,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 373,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 21.124,
+      "tbt_ms_p50": 5.57,
+      "tbt_ms_mean": 5.657,
+      "kv_bytes": 9822208,
+      "kv_seq_len": 436,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 410,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 23.44,
+      "tbt_ms_p50": 5.471,
+      "tbt_ms_mean": 5.635,
+      "kv_bytes": 10655744,
+      "kv_seq_len": 473,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 110,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 22.259,
+      "tbt_ms_p50": 5.654,
+      "tbt_ms_mean": 5.821,
+      "kv_bytes": 3897344,
+      "kv_seq_len": 173,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        21.657,
+        22.002,
+        41.975,
+        22.515
+      ],
+      "tbt_ms_samples": [
+        5.654,
+        5.655,
+        5.647,
+        5.657
+      ],
+      "kv_bytes_samples": [
+        4550656,
+        6037504,
+        3244032,
+        2140160
+      ],
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 38,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 26.987,
+      "tbt_ms_p50": 5.55,
+      "tbt_ms_mean": 5.579,
+      "kv_bytes": 2286592,
+      "kv_seq_len": 101,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        27.295,
+        19.401,
+        26.679,
+        28.154
+      ],
+      "tbt_ms_samples": [
+        5.549,
+        5.613,
+        5.549,
+        5.55
+      ],
+      "kv_bytes_samples": [
+        1982464,
+        1802240,
+        2590720,
+        2658304
+      ],
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake",
+      "prompt_tokens": 52,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 23.386,
+      "tbt_ms_p50": 5.667,
+      "tbt_ms_mean": 5.717,
+      "kv_bytes": 2590720,
+      "kv_seq_len": 115,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        24.754,
+        23.06,
+        23.712,
+        20.124
+      ],
+      "tbt_ms_samples": [
+        5.67,
+        5.669,
+        5.665,
+        5.664
+      ],
+      "kv_bytes_samples": [
+        2635776,
+        2545664,
+        3153920,
+        1779712
+      ],
+      "prefix_reuse": "cold"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 58,
+      "concurrency": 1,
+      "rep": 0,
+      "ttft_ms": 15.564,
+      "tbt_ms_p50": 5.499,
+      "tbt_ms_mean": 5.495,
+      "kv_bytes": 2725888,
+      "kv_seq_len": 121,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "prefix_reuse": "warm"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 373,
+      "concurrency": 1,
+      "rep": 1,
+      "ttft_ms": 19.803,
+      "tbt_ms_p50": 5.492,
+      "tbt_ms_mean": 5.508,
+      "kv_bytes": 9822208,
+      "kv_seq_len": 436,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "prefix_reuse": "warm"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 410,
+      "concurrency": 1,
+      "rep": 2,
+      "ttft_ms": 19.906,
+      "tbt_ms_p50": 5.531,
+      "tbt_ms_mean": 5.512,
+      "kv_bytes": 10655744,
+      "kv_seq_len": 473,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "prefix_reuse": "warm"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 110,
+      "concurrency": 4,
+      "rep": 0,
+      "ttft_ms": 30.869,
+      "tbt_ms_p50": 5.685,
+      "tbt_ms_mean": 5.598,
+      "kv_bytes": 3897344,
+      "kv_seq_len": 173,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        30.163,
+        31.574,
+        32.165,
+        24.73
+      ],
+      "tbt_ms_samples": [
+        5.687,
+        5.687,
+        5.684,
+        5.666
+      ],
+      "kv_bytes_samples": [
+        4550656,
+        6037504,
+        3244032,
+        2140160
+      ],
+      "prefix_reuse": "warm"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 38,
+      "concurrency": 4,
+      "rep": 1,
+      "ttft_ms": 29.876,
+      "tbt_ms_p50": 5.613,
+      "tbt_ms_mean": 5.572,
+      "kv_bytes": 2286592,
+      "kv_seq_len": 101,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        22.476,
+        31.597,
+        30.547,
+        29.206
+      ],
+      "tbt_ms_samples": [
+        5.608,
+        5.619,
+        5.612,
+        5.614
+      ],
+      "kv_bytes_samples": [
+        1982464,
+        1802240,
+        2590720,
+        2658304
+      ],
+      "prefix_reuse": "warm"
+    },
+    {
+      "system_id": "mooncake_warm",
+      "prompt_tokens": 52,
+      "concurrency": 4,
+      "rep": 2,
+      "ttft_ms": 39.403,
+      "tbt_ms_p50": 5.644,
+      "tbt_ms_mean": 5.625,
+      "kv_bytes": 2590720,
+      "kv_seq_len": 115,
+      "new_tokens": 64,
+      "prompt_source": "wildchat",
+      "ttft_ms_samples": [
+        40.557,
+        39.278,
+        39.527,
+        14.631
+      ],
+      "tbt_ms_samples": [
+        5.641,
+        5.646,
+        5.634,
+        5.654
+      ],
+      "kv_bytes_samples": [
+        2635776,
+        2545664,
+        3153920,
+        1779712
+      ],
+      "prefix_reuse": "warm"
+    }
+  ],
+  "takeaways": [
+    "Batching is the big win under load: at N = 4 the baseline queues requests, so its median TTFT is ~1.5 s and the last client waits 3.0-3.4 s, while vLLM serves the same burst in 26 / 72 / 191 ms (128 / 512 / 1984-token prompts).",
+    "vLLM decodes ~2.9x faster per user (TBT 5.5-6.0 ms vs ~15.8 ms for the HF baseline), and its TBT rises only 0.1-0.4 ms from N = 1 to N = 4, so batching costs decode almost nothing at this scale.",
+    "Mooncake prefix reuse pays off on long prompts: at 1984 tokens warm TTFT is 43 ms vs 77 ms cold (N = 1) and 142 ms vs 377 ms cold (N = 4), beating plain vLLM (73 / 191 ms) with a lower tail (p95 182 vs 299 ms).",
+    "Reuse is not free: cold Mooncake is slower than plain vLLM under load (377 vs 191 ms at 1984 tokens, N = 4) because every KV is also written to the store, and on short real WildChat prompts warm is no better than cold (N = 4 median 31 vs 23 ms).",
+    "KV bytes are identical across systems (46.1 MB at 1984 + 63 tokens) because they come from the dense formula. The systems differ in where that KV lives (contiguous tensor, paged blocks, external store), not in its size."
+  ],
+  "summary": "I compared a minimal single-request Hugging Face server (minimal_full_server) with vLLM and with vLLM + Mooncake's KV store (cold and warm prefix) serving TinyLlama-1.1B-Chat on one NVIDIA A10 (Lambda Cloud), sweeping 128 / 512 / 1984-token prompts x 1 and 4 concurrent clients x 3 reps with 64 new tokens, plus a 20-prompt WildChat-1M sanity check. At N = 1 every system is fast (TTFT 12-92 ms) and the gap is mostly kernel efficiency. At N = 4 scheduling dominates. The baseline's TTFT is pure queueing (~1 s per earlier request), while vLLM's continuous batching keeps all four clients within ~300 ms even at 1984 tokens and holds TBT near 6 ms. Mooncake's novelty shows up only in TTFT and only when there is a long prefix to reuse. Warm nearly halves TTFT at 1984 tokens, but cold runs pay a store-write overhead and short chat prompts see no gain.",
+  "plot": {
+    "title": "Median TTFT vs prompt length (concurrency = 1, synthetic prompts)",
+    "metric": "ttft_ms",
+    "x_field": "prompt_tokens",
+    "series_field": "system_id",
+    "aggregate": "median",
+    "filter": {
+      "concurrency": 1,
+      "prompt_source": "synthetic"
+    },
+    "y_label": "TTFT (ms)",
+    "x_label": "Prompt tokens"
+  },
+  "boxplot": {
+    "title": "TTFT distribution per client (1984-token prompt)",
+    "subtitle": "Each box pools one sample per concurrent client across 3 repetitions (12 samples at N = 4). Synthetic prompts only.",
+    "metric": "ttft_ms",
+    "samples_field": "ttft_ms_samples",
+    "group_field": "system_id",
+    "default_concurrency": 4,
+    "filter": {
+      "prompt_tokens": 1984,
+      "prompt_source": "synthetic"
+    },
+    "y_label": "TTFT (ms)",
+    "metrics": [
+      {
+        "key": "ttft_ms",
+        "label": "TTFT",
+        "unit": "ms"
+      },
+      {
+        "key": "tbt_ms_p50",
+        "label": "TBT",
+        "unit": "ms"
+      },
+      {
+        "key": "kv_bytes",
+        "label": "KV bytes",
+        "unit": ""
+      }
+    ]
+  }
+}

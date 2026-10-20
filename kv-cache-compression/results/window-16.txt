@@ -1,0 +1,99 @@
+
+[1] Load model
+    model=TinyLlama/TinyLlama-1.1B-Chat-v1.0
+    device=cuda, dtype=torch.float16
+    d_model=2048, layers=22, heads=32, kv_heads=4, head_dim=64
+    GQA: 32 query heads share 4 KV heads (8x smaller KV cache than MHA)
+    load time=3124 ms
+
+[2] Receive prompt
+    raw: 'Explain how transformer attention works in detail and provide a simple example.'
+    templated: '<|user|>\nExplain how transformer attention works in detail and provide a simple example.</s>\n<|assistant|>\n'
+    31 tokens
+
+[3] Prefill + KV cache
+    --- unwrap model(): layer-by-layer prefill ---
+    * Token IDs (1, 31) -> embeddings (1, 31, 2048)
+    * Layer 0 Q (1, 32, 31, 64)  K cached (1, 4, 31, 64)
+    * Layer 0 scores (1, 32, 31, 31) (pre-softmax)  weights (1, 32, 31, 31)
+    * Ran all 22 layers manually
+    * First token matches HuggingFace model(): True
+    prefill time=1777.8 ms
+    KV cache seq_len=16
+    actual KV cache bytes=360448
+    uncompressed dense baseline bytes=698368
+    first output token id=13372 piece='Transform'
+
+[4] Autoregressive decode
+    prefill chose id= 13372  text so far='Transform'
+    * decode step 1 layer 0: Q seq=1  K seq=16
+    step  1: id=   414  piece='ers'  text so far='Transformers'  kv_len=16
+    step  2: id= 29901  piece=':'  text so far='Transformers:'  kv_len=16
+    step  3: id=   450  piece='The'  text so far='Transformers: The'  kv_len=16
+    step  4: id=  9208  piece='Last'  text so far='Transformers: The Last'  kv_len=16
+    step  5: id= 22980  piece='Knight'  text so far='Transformers: The Last Knight'  kv_len=16
+    step  6: id=   338  piece='is'  text so far='Transformers: The Last Knight is'  kv_len=16
+    step  7: id=   263  piece='a'  text so far='Transformers: The Last Knight is a'  kv_len=16
+    step  8: id= 29871  piece=''  text so far='Transformers: The Last Knight is a '  kv_len=16
+    step  9: id= 29906  piece='2'  text so far='Transformers: The Last Knight is a 2'  kv_len=16
+    step 10: id= 29900  piece='0'  text so far='Transformers: The Last Knight is a 20'  kv_len=16
+    step 11: id= 29896  piece='1'  text so far='Transformers: The Last Knight is a 201'  kv_len=16
+    step 12: id= 29955  piece='7'  text so far='Transformers: The Last Knight is a 2017'  kv_len=16
+    step 13: id=  3082  piece='American'  text so far='Transformers: The Last Knight is a 2017 American'  kv_len=16
+    step 14: id=  9358  piece='ep'  text so far='Transformers: The Last Knight is a 2017 American ep'  kv_len=16
+    step 15: id=   293  piece='ic'  text so far='Transformers: The Last Knight is a 2017 American epic'  kv_len=16
+    step 16: id= 17623  piece='advent'  text so far='Transformers: The Last Knight is a 2017 American epic advent'  kv_len=16
+    step 17: id=   545  piece='ure'  text so far='Transformers: The Last Knight is a 2017 American epic adventure'  kv_len=16
+    step 18: id=  2706  piece='film'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film'  kv_len=16
+    step 19: id= 10624  piece='directed'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed'  kv_len=16
+    step 20: id=   491  piece='by'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by'  kv_len=16
+    step 21: id=  5011  piece='James'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James'  kv_len=16
+    step 22: id=   402  piece='G'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James G'  kv_len=16
+    step 23: id=  5963  piece='unn'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn'  kv_len=16
+    step 24: id= 29892  piece=','  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn,'  kv_len=16
+    step 25: id=  3971  piece='written'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written'  kv_len=16
+    step 26: id=   491  piece='by'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by'  kv_len=16
+    step 27: id=   405  piece='N'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by N'  kv_len=16
+    step 28: id= 23249  piece='icole'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole'  kv_len=16
+    step 29: id= 23907  piece='Perl'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perl'  kv_len=16
+    step 30: id=  1171  piece='man'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman'  kv_len=16
+    step 31: id= 29892  piece=','  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman,'  kv_len=16
+    step 32: id=   322  piece='and'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and'  kv_len=16
+    step 33: id= 10624  piece='directed'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed'  kv_len=16
+    step 34: id=   491  piece='by'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by'  kv_len=16
+    step 35: id=  5011  piece='James'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James'  kv_len=16
+    step 36: id=   402  piece='G'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James G'  kv_len=16
+    step 37: id=  5963  piece='unn'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn'  kv_len=16
+    step 38: id= 29889  piece='.'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn.'  kv_len=16
+    step 39: id=   450  piece='The'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The'  kv_len=16
+    step 40: id=  2706  piece='film'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film'  kv_len=16
+    step 41: id=  4477  piece='follows'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows'  kv_len=16
+    step 42: id=   278  piece='the'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the'  kv_len=16
+    step 43: id=  5828  piece='story'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story'  kv_len=16
+    step 44: id=   310  piece='of'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of'  kv_len=16
+    step 45: id=   263  piece='a'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a'  kv_len=16
+    step 46: id=  2318  piece='group'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group'  kv_len=16
+    step 47: id=   310  piece='of'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of'  kv_len=16
+    step 48: id=  3984  piece='mis'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of mis'  kv_len=16
+    step 49: id= 29888  piece='f'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misf'  kv_len=16
+    step 50: id=  1169  piece='its'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits'  kv_len=16
+    step 51: id=  1058  piece='who'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who'  kv_len=16
+    step 52: id=  3719  piece='band'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band'  kv_len=16
+    step 53: id=  4208  piece='together'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together'  kv_len=16
+    step 54: id=   304  piece='to'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to'  kv_len=16
+    step 55: id=  4078  piece='save'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save'  kv_len=16
+    step 56: id=  1009  piece='their'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their'  kv_len=16
+    step 57: id=  4726  piece='town'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town'  kv_len=16
+    step 58: id=   515  piece='from'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from'  kv_len=16
+    step 59: id=   263  piece='a'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from a'  kv_len=16
+    step 60: id= 13988  piece='powerful'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from a powerful'  kv_len=16
+    step 61: id= 16126  piece='evil'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from a powerful evil'  kv_len=16
+    step 62: id= 29889  piece='.'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from a powerful evil.'  kv_len=16
+    step 63: id=   450  piece='The'  text so far='Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from a powerful evil. The'  kv_len=16
+
+[5] Exit
+    decode time=2418.5 ms (63 new tokens)
+    final KV cache bytes=360448
+    final KV cache length=16
+    output: 'Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from a powerful evil. The'
+    done.

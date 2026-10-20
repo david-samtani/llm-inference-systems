@@ -1,0 +1,27 @@
+name,mode,setting,setting_type,generated_tokens,decode_ms,decode_steps,ms_per_token,tokens_per_second,cache_length,kv_bytes,metadata_bytes,total_bytes,edit_distance,normalized_edit_distance,matching_prefix_tokens,output
+importance-16,importance,16,budget,64,2821.3,63,44.782539682539685,22.330131499663274,16,360448,1408,361856,57,0.890625,2,"Transformer is a transformer architecture|>
+Transformer is a transformer architecture|assistant|
+Transformer is a transformer architecture is used to attend to specific parts of the input sequence, and how it differs from other attention mechanisms in transformer models, and how it differs from other attention"
+importance-24,importance,24,budget,64,2863.3,63,45.44920634920635,22.002584430552158,24,540672,2112,542784,55,0.859375,6,"Transformer attention is a mechanism in neural networks, which is a type of attention mechanism that is used in transformer architecture is a type of attention mechanism.
+
+Transformer attention is a type of attention mechanism.
+
+Transformer attention is a type of attention mechanism in transformer networks are a type of attention mechanism"
+importance-8,importance,8,budget,26,1115.0,25,44.6,22.42152466367713,8,180224,704,180928,56,0.875,2,"Transformer models have shown promising results in the context of the paper, and how it differs from the previous question."
+none-16,none,16,max_tokens,16,575.2,15,38.34666666666667,26.077885952712098,46,1036288,0,1036288,0,0.0,16,Transformer attention is a mechanism used in transformer models to attend to specific parts
+none-32,none,32,max_tokens,32,1152.7,31,37.18387096774194,26.89338075821983,62,1396736,0,1396736,0,0.0,32,Transformer attention is a mechanism used in transformer models to attend to specific parts of the input sequence. It works by computing a sequence of attention weights for each
+none-64,none,64,max_tokens,64,2336.8,63,37.092063492063495,26.959945224238272,94,2117632,0,2117632,0,0.0,64,"Transformer attention is a mechanism used in transformer models to attend to specific parts of the input sequence. It works by computing a sequence of attention weights for each token in the input sequence, which are used to weight the attention of subsequent tokens in the sequence.
+
+The basic idea behind transformer attention is to model"
+quant-16,quant,16,max_tokens,16,654.8,15,43.65333333333333,22.907758094074527,46,518144,176,518320,0,0.0,16,Transformer attention is a mechanism used in transformer models to attend to specific parts
+quant-32,quant,32,max_tokens,32,1321.8,31,42.63870967741936,23.452867302163718,62,698368,176,698544,0,0.0,32,Transformer attention is a mechanism used in transformer models to attend to specific parts of the input sequence. It works by computing a sequence of attention weights for each
+quant-64,quant,64,max_tokens,64,2775.0,63,44.04761904761905,22.7027027027027,94,1058816,176,1058992,1,0.015625,63,"Transformer attention is a mechanism used in transformer models to attend to specific parts of the input sequence. It works by computing a sequence of attention weights for each token in the input sequence, which are used to weight the attention of subsequent tokens in the sequence.
+
+The basic idea behind transformer attention is to use"
+window-16,window,16,budget,64,2418.5,63,38.388888888888886,26.049204052098407,16,360448,0,360448,62,0.96875,1,"Transformers: The Last Knight is a 2017 American epic adventure film directed by James Gunn, written by Nicole Perlman, and directed by James Gunn. The film follows the story of a group of misfits who band together to save their town from a powerful evil. The"
+window-24,window,24,budget,64,2389.6,63,37.93015873015873,26.36424506193505,24,540672,0,540672,61,0.953125,2,"Transformer-based language models, such as BERT and RoBERTa, use a sequence-to-sequence architecture to learn a mapping from a sequence of input tokens to a sequence of output tokens. The model is trained on a large corpus of text, and the output is a probability distribution over the voc"
+window-8,window,8,budget,64,2374.8,63,37.695238095238096,26.52854977261243,8,180224,0,180224,63,0.984375,1,"Transformers: The Last Knight (2018)
+- ""The Wizard of Oz (1939)
+- ""The Wizard of Oz (1939)
+- ""The Wizard of Oz (1939)
+- ""The Wizard of"

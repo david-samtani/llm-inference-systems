@@ -1,0 +1,12 @@
+{
+  "name": "serving-benchmark",
+  "private": true,
+  "description": "Benchmark project root; Vite report app lives in report/",
+  "scripts": {
+    "setup": "npm ci --prefix report",
+    "dev": "npm run dev --prefix report",
+    "build": "npm run build --prefix report",
+    "preview": "npm run preview --prefix report",
+    "lint": "npm run lint --prefix report"
+  }
+}

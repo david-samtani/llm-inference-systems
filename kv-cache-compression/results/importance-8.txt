@@ -1,0 +1,66 @@
+
+[1] Load model
+    model=TinyLlama/TinyLlama-1.1B-Chat-v1.0
+    device=cuda, dtype=torch.float16
+    d_model=2048, layers=22, heads=32, kv_heads=4, head_dim=64
+    GQA: 32 query heads share 4 KV heads (8x smaller KV cache than MHA)
+    load time=3133 ms
+
+[2] Receive prompt
+    raw: 'Explain how transformer attention works in detail and provide a simple example.'
+    templated: '<|user|>\nExplain how transformer attention works in detail and provide a simple example.</s>\n<|assistant|>\n'
+    31 tokens
+
+[3] Prefill + KV cache
+    --- unwrap model(): layer-by-layer prefill ---
+    * Token IDs (1, 31) -> embeddings (1, 31, 2048)
+    * Layer 0 Q (1, 32, 31, 64)  K cached (1, 4, 31, 64)
+    * Layer 0 scores (1, 32, 31, 31) (pre-softmax)  weights (1, 32, 31, 31)
+    * Ran all 22 layers manually
+    * First token matches HuggingFace model(): True
+    prefill time=1810.7 ms
+    KV cache seq_len=8
+    actual KV cache bytes=180224
+    uncompressed dense baseline bytes=698368
+    importance score bytes=704
+    total cache state bytes=180928
+    first output token id=13372 piece='Transform'
+
+[4] Autoregressive decode
+    prefill chose id= 13372  text so far='Transform'
+    * decode step 1 layer 0: Q seq=1  K seq=8
+    step  1: id=   261  piece='er'  text so far='Transformer'  kv_len=8
+    step  2: id=  4733  piece='models'  text so far='Transformer models'  kv_len=8
+    step  3: id=   505  piece='have'  text so far='Transformer models have'  kv_len=8
+    step  4: id=  4318  piece='shown'  text so far='Transformer models have shown'  kv_len=8
+    step  5: id=  2504  piece='prom'  text so far='Transformer models have shown prom'  kv_len=8
+    step  6: id=  5921  piece='ising'  text so far='Transformer models have shown promising'  kv_len=8
+    step  7: id=  2582  piece='results'  text so far='Transformer models have shown promising results'  kv_len=8
+    step  8: id=   297  piece='in'  text so far='Transformer models have shown promising results in'  kv_len=8
+    step  9: id=   278  piece='the'  text so far='Transformer models have shown promising results in the'  kv_len=8
+    step 10: id=  3030  piece='context'  text so far='Transformer models have shown promising results in the context'  kv_len=8
+    step 11: id=   310  piece='of'  text so far='Transformer models have shown promising results in the context of'  kv_len=8
+    step 12: id=   278  piece='the'  text so far='Transformer models have shown promising results in the context of the'  kv_len=8
+    step 13: id=  5650  piece='paper'  text so far='Transformer models have shown promising results in the context of the paper'  kv_len=8
+    step 14: id= 29892  piece=','  text so far='Transformer models have shown promising results in the context of the paper,'  kv_len=8
+    step 15: id=   322  piece='and'  text so far='Transformer models have shown promising results in the context of the paper, and'  kv_len=8
+    step 16: id=   920  piece='how'  text so far='Transformer models have shown promising results in the context of the paper, and how'  kv_len=8
+    step 17: id=   372  piece='it'  text so far='Transformer models have shown promising results in the context of the paper, and how it'  kv_len=8
+    step 18: id=  2923  piece='diff'  text so far='Transformer models have shown promising results in the context of the paper, and how it diff'  kv_len=8
+    step 19: id=   414  piece='ers'  text so far='Transformer models have shown promising results in the context of the paper, and how it differs'  kv_len=8
+    step 20: id=   515  piece='from'  text so far='Transformer models have shown promising results in the context of the paper, and how it differs from'  kv_len=8
+    step 21: id=   278  piece='the'  text so far='Transformer models have shown promising results in the context of the paper, and how it differs from the'  kv_len=8
+    step 22: id=  3517  piece='previous'  text so far='Transformer models have shown promising results in the context of the paper, and how it differs from the previous'  kv_len=8
+    step 23: id=  1139  piece='question'  text so far='Transformer models have shown promising results in the context of the paper, and how it differs from the previous question'  kv_len=8
+    step 24: id= 29889  piece='.'  text so far='Transformer models have shown promising results in the context of the paper, and how it differs from the previous question.'  kv_len=8
+    step 25: id=     2  piece='</s>'  text so far='Transformer models have shown promising results in the context of the paper, and how it differs from the previous question.'  kv_len=8
+    (EOS — stopping decode)
+
+[5] Exit
+    decode time=1115.0 ms (25 new tokens)
+    final KV cache bytes=180224
+    final KV cache length=8
+    final importance score bytes=704
+    final total cache state bytes=180928
+    output: 'Transformer models have shown promising results in the context of the paper, and how it differs from the previous question.'
+    done.
